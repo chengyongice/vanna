@@ -577,6 +577,9 @@ class VannaBase(ABC):
             "3. If the provided context is insufficient, please explain why it can't be generated. \n"
             "4. Please use the most relevant table(s). \n"
             "5. If the question has been asked and answered before, please repeat the answer exactly as it was given before. \n"
+            "6. Always prefix table with the corresponding schema. \n"
+            "7. Always prefix column with table alias and give table a alias name. \n"
+            "8. Only use column specified in the field COLUMN_NAME. \n"
         )
 
         message_log = [self.system_message(initial_prompt)]
@@ -1801,9 +1804,11 @@ class VannaBase(ABC):
         table_column = df.columns[
             df.columns.str.lower().str.contains("table_name")
         ].to_list()[0]
-        columns = [database_column,
-                    schema_column,
-                    table_column]
+        # no need to repeat information.
+        # columns = [database_column,
+        #             schema_column,
+        #             table_column]
+        columns = []
         candidates = ["column_name",
                       "data_type",
                       "comment"]
@@ -1828,8 +1833,10 @@ class VannaBase(ABC):
                     df_columns_filtered_to_table = df.query(
                         f'{database_column} == "{database}" and {schema_column} == "{schema}" and {table_column} == "{table}"'
                     )
-                    doc = f"The following columns are in the {table} table in the {database} database:\n\n"
-                    doc += df_columns_filtered_to_table[columns].to_markdown()
+                    doc = f"The following columns are in the {table} table in the {schema} schema in the {database} database:\n\n"
+                    # to strip the space due to the formatting of the table.
+                    # doc += df_columns_filtered_to_table[columns].to_markdown()
+                    doc += df_columns_filtered_to_table[columns].to_csv(path_or_buf=None, index=False)
 
                     plan._plan.append(
                         TrainingPlanItem(
