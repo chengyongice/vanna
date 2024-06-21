@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Dict, List, Union
+from typing import Dict, List, Union, Mapping
 
 
 @dataclass
@@ -217,8 +217,9 @@ class TrainingPlanItem:
     item_group: str
     item_name: str
     item_value: str
+    item_metadata: Mapping[str, Union[str, int, float, bool]] | None
 
-    def __str__(self):
+    def __str__(self): 
         if self.item_type == self.ITEM_TYPE_SQL:
             return f"Train on SQL: {self.item_group} {self.item_name}"
         elif self.item_type == self.ITEM_TYPE_DDL:

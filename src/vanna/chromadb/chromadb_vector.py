@@ -75,6 +75,7 @@ class ChromaDB_VectorStore(VannaBase):
             documents=question_sql_json,
             embeddings=self.generate_embedding(question_sql_json),
             ids=id,
+            metadatas=kwargs.get("metadatas", None),
         )
 
         return id
@@ -85,6 +86,7 @@ class ChromaDB_VectorStore(VannaBase):
             documents=ddl,
             embeddings=self.generate_embedding(ddl),
             ids=id,
+            metadatas=kwargs.get("metadatas", None),
         )
         return id
 
@@ -94,6 +96,7 @@ class ChromaDB_VectorStore(VannaBase):
             documents=documentation,
             embeddings=self.generate_embedding(documentation),
             ids=id,
+            metadatas=kwargs.get("metadatas", None),
         )
         return id
 
@@ -105,7 +108,11 @@ class ChromaDB_VectorStore(VannaBase):
         if sql_data is not None:
             # Extract the documents and ids
             documents = [json.loads(doc) for doc in sql_data["documents"]]
-            ids = sql_data["ids"]
+            ids = sql_data["ids"]            
+            metadatas = [json.dumps(metadata) 
+                         if metadata is not None else None
+                         for metadata in sql_data["metadatas"]
+                        ]
 
             # Create a DataFrame
             df_sql = pd.DataFrame(
@@ -113,6 +120,7 @@ class ChromaDB_VectorStore(VannaBase):
                     "id": ids,
                     "question": [doc["question"] for doc in documents],
                     "content": [doc["sql"] for doc in documents],
+                    "metadatas": metadatas,
                 }
             )
 
@@ -126,6 +134,10 @@ class ChromaDB_VectorStore(VannaBase):
             # Extract the documents and ids
             documents = [doc for doc in ddl_data["documents"]]
             ids = ddl_data["ids"]
+            metadatas = [json.dumps(metadata) 
+                         if metadata is not None else None
+                         for metadata in ddl_data["metadatas"]
+                        ]
 
             # Create a DataFrame
             df_ddl = pd.DataFrame(
@@ -133,6 +145,7 @@ class ChromaDB_VectorStore(VannaBase):
                     "id": ids,
                     "question": [None for doc in documents],
                     "content": [doc for doc in documents],
+                    "metadatas": metadatas,
                 }
             )
 
@@ -146,6 +159,10 @@ class ChromaDB_VectorStore(VannaBase):
             # Extract the documents and ids
             documents = [doc for doc in doc_data["documents"]]
             ids = doc_data["ids"]
+            metadatas = [json.dumps(metadata) 
+                         if metadata is not None else None
+                         for metadata in doc_data["metadatas"]
+                        ]
 
             # Create a DataFrame
             df_doc = pd.DataFrame(
@@ -153,6 +170,7 @@ class ChromaDB_VectorStore(VannaBase):
                     "id": ids,
                     "question": [None for doc in documents],
                     "content": [doc for doc in documents],
+                    "metadatas": metadatas,
                 }
             )
 

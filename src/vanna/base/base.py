@@ -80,6 +80,10 @@ class VannaBase(ABC):
         self.dialect = self.config.get("dialect", "SQL")
         self.language = self.config.get("language", None)
         self.max_tokens = self.config.get("max_tokens", 14000)
+        self.init_global_chat_state()
+
+    def init_global_chat_state(self):
+        self.global_chat_state = {"messages": [], "table_contexts": []}
 
     def log(self, message: str, title: str = "Info"):
         print(f"{title}: {message}")
@@ -89,6 +93,37 @@ class VannaBase(ABC):
             return ""
 
         return f"Respond in the {self.language} language."
+    
+    def valid_sql(self, sql: str) -> str:
+        It may be benefit to add validation for production.
+        for development, it slows down too much.
+        return sql
+        # if self.run_sql_is_set is False:
+        #     # unable to valid sql?
+        #     return sql
+        
+        # try:
+        #     df = self.run_sql(sql)
+        #     return sql
+        # except Exception as e:
+        #     print(f"""The below sql is not valid. 
+        #           {sql}
+        #           """)
+        
+        prompt = f"""Your task is to check and return the correct version of the given SQL using only the criterias listed below. Please only use the information provided in this question and apply each criteria one by one. Please return SQL after applying each criteria. In addition, pleaes note there is no relationship between different criterias.
+        ------criteria---------
+        1. The SQL cannot include `ClientId = PatientNumber`. It should be `ClientId = 'P' + PatientNumber`.        
+        2. If there is no `LEFT JOIN` in the SQL, do nothing and just return. Otherwise, if the `WHERE` clause includes any minimun comparison splitted by AND / OR involving columns from the table on the right-hand side of a `LEFT JOIN` clause (`LEFT JOIN` only), apply the below steps for each comparison.
+           - If the above identified comparison is checking NULL in format of `<column> IS NULL`, do nothing.
+           - Othewise, move this comparison to the `ON` clause of the `LEFT JOIN` clause identified above.
+        ------The SQL------------        
+        {sql}                
+        """
+        # 2. All tables in the SQL must have alias. The alias can only include English alphabetic letters and can't be more than 3 characters.
+        # 3. `WHERE` clause in the given SQL must not include any comparison condition involving columns from different table. For example, where A.column1 > B.column2 is wrong because it involves two tables A and B. These conditions must be put to 'on' clause.
+        message_log = [self.user_message(prompt)]
+        llm_response = self.submit_prompt(message_log)
+        return self.extract_sql(llm_response)
 
     def generate_sql(self, question: str, allow_llm_to_see_data=False, **kwargs) -> str:
         """
@@ -162,7 +197,7 @@ class VannaBase(ABC):
                     return f"Error running intermediate SQL: {e}"
 
 
-        return self.extract_sql(llm_response)
+        return self.valid_sql(self.extract_sql(llm_response))
 
     def extract_sql(self, llm_response: str) -> str:
         """
@@ -180,7 +215,7 @@ class VannaBase(ABC):
         Returns:
             str: The extracted SQL query.
         """
-
+        print(llm_response)
         # If the llm_response contains a CTE (with clause), extract the last sql between WITH and ;
         sqls = re.findall(r"WITH.*?;", llm_response, re.DOTALL)
         if sqls:
@@ -196,7 +231,7 @@ class VannaBase(ABC):
             return sql
 
         # If the llm_response contains a markdown code block, with or without the sql tag, extract the last sql from it
-        sqls = re.findall(r"```sql\n(.*)```", llm_response, re.DOTALL)
+        sqls = re.findall(r"```sql\n(.*?)```", llm_response, re.DOTALL)
         if sqls:
             sql = sqls[-1]
             self.log(title="Extracted SQL", message=f"{sql}")
@@ -510,18 +545,27 @@ class VannaBase(ABC):
         self, initial_prompt: str, sql_list: list[str], max_tokens: int = 14000
     ) -> str:
         if len(sql_list) > 0:
-            initial_prompt += "\n===Question-SQL Pairs\n\n"
+            initial_prompt += "\nThe below lists some example questions and the resulting SQL."
+            initial_prompt += "\nPlease note example is only related with its own resulting queries, and it is not related with other examples and their resulting queries."
+            initial_prompt += "\nAnd example is not related with the questions from the user."
+            initial_prompt += "\nAnd don't refer the user questions to these examples."
+            initial_prompt += "\n===Example Question and SQL Pairs\n\n"
 
             for question in sql_list:
+                if question is None:
+                    continue
+                if not ("question" in question and "sql" in question):
+                    continue
                 if (
-                    self.str_to_approx_token_count(initial_prompt)
+                    self.str_to_approx_token_count(question['question'])
                     + self.str_to_approx_token_count(question["sql"])
                     < max_tokens
                 ):
                     initial_prompt += f"{question['question']}\n{question['sql']}\n\n"
 
         return initial_prompt
-
+    
+    
     def get_sql_prompt(
         self,
         initial_prompt : str,
@@ -569,28 +613,42 @@ class VannaBase(ABC):
         initial_prompt = self.add_documentation_to_prompt(
             initial_prompt, doc_list, max_tokens=self.max_tokens
         )
-
-        initial_prompt += (
-            "===Response Guidelines \n"
-            "1. If the provided context is sufficient, please generate a valid SQL query without any explanations for the question. \n"
-            "2. If the provided context is almost sufficient but requires knowledge of a specific string in a particular column, please generate an intermediate SQL query to find the distinct strings in that column. Prepend the query with a comment saying intermediate_sql \n"
-            "3. If the provided context is insufficient, please explain why it can't be generated. \n"
-            "4. Please use the most relevant table(s). \n"
-            "5. If the question has been asked and answered before, please repeat the answer exactly as it was given before. \n"
-            "6. Always prefix table with the corresponding schema. \n"
-            "7. Always prefix column with table alias and give table a alias name. \n"
-            "8. Only use column specified in the field COLUMN_NAME. \n"
-        )
-
-        message_log = [self.system_message(initial_prompt)]
-
+        valid_examples_available = False
         for example in question_sql_list:
             if example is None:
                 print("example is None")
             else:
-                if example is not None and "question" in example and "sql" in example:
-                    message_log.append(self.user_message(example["question"]))
-                    message_log.append(self.assistant_message(example["sql"]))
+                valid_examples_available = True
+                break
+        if valid_examples_available:
+            initial_prompt = self.add_sql_to_prompt(
+                initial_prompt, question_sql_list, max_tokens=self.max_tokens
+            )            
+
+        initial_prompt += (
+            "===Response Guidelines \n"
+            "1. If the provided context is sufficient, please generate a valid SQL query without any explanations for the question.\n"
+            "2. If the provided context is almost sufficient but requires knowledge of a specific string in a particular column, please generate an intermediate SQL query to find the distinct strings in that column. Prepend the query with a comment saying intermediate_sql.\n"
+            "3. If the provided context is insufficient, please explain why it can't be generated.\n"
+            "4. Please use the most relevant table(s).\n"
+            "5. Only use column specified in the field COLUMN_NAME.\n"
+            "6. All tables in the generated SQL should be prefixed with the corresponding schema. All tables referenced in the SQL should be in the format of <schema>.<tablename>. For example, 'from FactAppointment' is wrong. 'from DWH.FactAppointment' is right. Another example, 'join SH_Patient' is wrong. 'join DS.SH_Patient' is correct.\n"
+            "7. All tables in the generated SQL should have alias. And any column used in the SQL should be in the format of <table alias>.<column>. For example, DS.SH_Patient.PatientNumber is wrong because DS.SH_Patient is not table alias.\n"
+            "8. Place any `IS NULL` checks for non-existing condition inside the WHERE clause.\n"
+            "9. Any comparison (such as `>`, `<`, `=`) involving columns from the table on the right-hand side of a `LEFT JOIN` must be placed inside the `ON` clause.\n"
+            "10. Ensure that columns involved in comparisons have the same data type. For example, comparing an integer column against a date column is incorrect.\n"
+            "11. Use AND instead of OR wherever possible, preferring AND over OR.\n"
+            #"8. Please generate the final answer in 3 steps. Step 1: generate a SQL query. Step 2: check whether all tables in generated query have been prefixed with schema. If not, please prefix the table with schema. Step 3: check whether all columns in the query from step 2 have been prefixed with table alias. If not, please prefix the column with the table alias.\n"
+            #"5. If the question has been asked and answered before, please repeat the answer exactly as it was given before. \n"
+            #"6. All tables in the generated SQL should be prefixed with the corresponding schema. All tables referenced in the SQL should be in the format of <schema>.<tablename>. For example, 'from FactAppointment' is wrong. 'from DWH.FactAppointment' is right. Another example, 'join SH_Patient' is wrong. 'join DS.SH_Patient' is correct. \n"
+            #"7. All tables in the generated SQL should have alias. And any column used in the SQL should be in the format of <table alias>.<column>. For example, DS.SH_Patient.PatientNumber is wrong because DS.SH_Patient is not table alias. \n"
+            #"8. Only use column specified in the field COLUMN_NAME. \n"            
+        )
+
+        message_log = [self.system_message(initial_prompt)]
+
+        for message in self.global_chat_state["messages"]:
+            message_log.append(message)
 
         message_log.append(self.user_message(question))
 
@@ -1592,6 +1650,11 @@ class VannaBase(ABC):
         raise Exception(
             "You need to connect to a database first by running vn.connect_to_snowflake(), vn.connect_to_postgres(), similar function, or manually set vn.run_sql"
         )
+    
+    def add_chat_to_memory(self, input: str, response: str):
+        self.global_chat_state["messages"].append(self.user_message(input))
+        self.global_chat_state["messages"].append(self.assistant_message(response))
+        
 
     def ask(
         self,
@@ -1600,6 +1663,7 @@ class VannaBase(ABC):
         auto_train: bool = True,
         visualize: bool = True,  # if False, will not generate plotly code
         allow_llm_to_see_data: bool = False,
+        is_new_topic = None,        
     ) -> Union[
         Tuple[
             Union[str, None],
@@ -1628,12 +1692,17 @@ class VannaBase(ABC):
 
         if question is None:
             question = input("Enter a question: ")
+        
+        if is_new_topic: 
+            self.init_global_chat_state()        
 
         try:
             sql = self.generate_sql(question=question, allow_llm_to_see_data=allow_llm_to_see_data)
         except Exception as e:
             print(e)
             return None, None, None
+        
+        self.add_chat_to_memory(question, sql)        
 
         if print_results:
             try:
@@ -1713,6 +1782,7 @@ class VannaBase(ABC):
         ddl: str = None,
         documentation: str = None,
         plan: TrainingPlan = None,
+        **kwargs
     ) -> str:
         """
         **Example:**
@@ -1740,26 +1810,26 @@ class VannaBase(ABC):
 
         if documentation:
             print("Adding documentation....")
-            return self.add_documentation(documentation)
+            return self.add_documentation(documentation, **kwargs)
 
         if sql:
             if question is None:
                 question = self.generate_question(sql)
                 print("Question generated with sql:", question, "\nAdding SQL...")
-            return self.add_question_sql(question=question, sql=sql)
+            return self.add_question_sql(question=question, sql=sql, **kwargs)
 
         if ddl:
             print("Adding ddl:", ddl)
-            return self.add_ddl(ddl)
+            return self.add_ddl(ddl, **kwargs)
 
         if plan:
             for item in plan._plan:
                 if item.item_type == TrainingPlanItem.ITEM_TYPE_DDL:
-                    self.add_ddl(item.item_value)
+                    self.add_ddl(item.item_value, metadatas = item.item_metadata, **kwargs)
                 elif item.item_type == TrainingPlanItem.ITEM_TYPE_IS:
-                    self.add_documentation(item.item_value)
+                    self.add_documentation(item.item_value, metadatas = item.item_metadata, **kwargs)
                 elif item.item_type == TrainingPlanItem.ITEM_TYPE_SQL:
-                    self.add_question_sql(question=item.item_name, sql=item.item_value)
+                    self.add_question_sql(question=item.item_name, sql=item.item_value, metadatas = item.item_metadata, **kwargs)
 
     def _get_databases(self) -> List[str]:
         try:
@@ -1833,7 +1903,7 @@ class VannaBase(ABC):
                     df_columns_filtered_to_table = df.query(
                         f'{database_column} == "{database}" and {schema_column} == "{schema}" and {table_column} == "{table}"'
                     )
-                    doc = f"The following columns are in the {table} table in the {schema} schema in the {database} database:\n\n"
+                    doc = f"The following columns along with decriptions are in the {table} table in the {schema} schema:\n\n"
                     # to strip the space due to the formatting of the table.
                     # doc += df_columns_filtered_to_table[columns].to_markdown()
                     doc += df_columns_filtered_to_table[columns].to_csv(path_or_buf=None, index=False)
@@ -1844,6 +1914,7 @@ class VannaBase(ABC):
                             item_group=f"{database}.{schema}",
                             item_name=table,
                             item_value=doc,
+                            item_metadata={"table":f"{schema.lower()}.{table.lower()}", "source": "db"}
                         )
                     )
 
