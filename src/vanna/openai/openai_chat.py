@@ -54,12 +54,18 @@ class OpenAI_Chat(VannaBase):
     def assistant_message(self, message: str) -> any:
         return {"role": "assistant", "content": message}
 
-    def submit_prompt(self, prompt, **kwargs) -> str:
+    def submit_prompt(self, prompt, **kwargs) -> str:        
         if prompt is None:
             raise Exception("Prompt is None")
 
         if len(prompt) == 0:
             raise Exception("Prompt is empty")
+        
+        print("-------------------Begin of Prompt----------------")
+        for message in prompt:
+            print(f"role: {message['role']}")
+            print(message['content'])
+        print("-------------------End of Prompt----------------")
 
         # Count the number of tokens in the message log
         # Use 4 as an approximation for the number of characters per token

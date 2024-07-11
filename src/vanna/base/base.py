@@ -95,8 +95,8 @@ class VannaBase(ABC):
         return f"Respond in the {self.language} language."
     
     def valid_sql(self, sql: str) -> str:
-        It may be benefit to add validation for production.
-        for development, it slows down too much.
+        # It may be benefit to add validation for production.
+        # for development, it slows down too much.
         return sql
         # if self.run_sql_is_set is False:
         #     # unable to valid sql?
