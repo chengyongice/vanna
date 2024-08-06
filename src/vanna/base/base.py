@@ -93,7 +93,7 @@ class VannaBase(ABC):
             return ""
 
         return f"Respond in the {self.language} language."
-    
+
     def valid_sql(self, sql: str) -> str:
         # It may be benefit to add validation for production.
         # for development, it slows down too much.
@@ -101,23 +101,23 @@ class VannaBase(ABC):
         # if self.run_sql_is_set is False:
         #     # unable to valid sql?
         #     return sql
-        
+
         # try:
         #     df = self.run_sql(sql)
         #     return sql
         # except Exception as e:
-        #     print(f"""The below sql is not valid. 
+        #     print(f"""The below sql is not valid.
         #           {sql}
         #           """)
-        
+
         prompt = f"""Your task is to check and return the correct version of the given SQL using only the criterias listed below. Please only use the information provided in this question and apply each criteria one by one. Please return SQL after applying each criteria. In addition, pleaes note there is no relationship between different criterias.
         ------criteria---------
-        1. The SQL cannot include `ClientId = PatientNumber`. It should be `ClientId = 'P' + PatientNumber`.        
+        1. The SQL cannot include `ClientId = PatientNumber`. It should be `ClientId = 'P' + PatientNumber`.
         2. If there is no `LEFT JOIN` in the SQL, do nothing and just return. Otherwise, if the `WHERE` clause includes any minimun comparison splitted by AND / OR involving columns from the table on the right-hand side of a `LEFT JOIN` clause (`LEFT JOIN` only), apply the below steps for each comparison.
            - If the above identified comparison is checking NULL in format of `<column> IS NULL`, do nothing.
            - Othewise, move this comparison to the `ON` clause of the `LEFT JOIN` clause identified above.
-        ------The SQL------------        
-        {sql}                
+        ------The SQL------------
+        {sql}
         """
         # 2. All tables in the SQL must have alias. The alias can only include English alphabetic letters and can't be more than 3 characters.
         # 3. `WHERE` clause in the given SQL must not include any comparison condition involving columns from different table. For example, where A.column1 > B.column2 is wrong because it involves two tables A and B. These conditions must be put to 'on' clause.
@@ -564,8 +564,8 @@ class VannaBase(ABC):
                     initial_prompt += f"{question['question']}\n{question['sql']}\n\n"
 
         return initial_prompt
-    
-    
+
+
     def get_sql_prompt(
         self,
         initial_prompt : str,
@@ -623,7 +623,7 @@ class VannaBase(ABC):
         if valid_examples_available:
             initial_prompt = self.add_sql_to_prompt(
                 initial_prompt, question_sql_list, max_tokens=self.max_tokens
-            )            
+            )
 
         initial_prompt += (
             "===Response Guidelines \n"
@@ -639,10 +639,11 @@ class VannaBase(ABC):
             "10. Ensure that columns involved in comparisons have the same data type. For example, comparing an integer column against a date column is incorrect.\n"
             "11. Use AND instead of OR wherever possible, preferring AND over OR.\n"
             "12. Please generate the final answer in 3 steps. Step 1: generate a SQL query. Step 2: check whether all tables in generated query have been prefixed with schema. If not, please prefix the table with schema. Step 3: check whether all columns in the query from step 2 have been prefixed with table alias. If not, please prefix the column with the table alias.\n"
+            "13. Please use `Dateadd` to calculate new date relative to a given date. Don't use `+`, `-` directly on date which is wrong.\n"
             #"5. If the question has been asked and answered before, please repeat the answer exactly as it was given before. \n"
             #"6. All tables in the generated SQL should be prefixed with the corresponding schema. All tables referenced in the SQL should be in the format of <schema>.<tablename>. For example, 'from FactAppointment' is wrong. 'from DWH.FactAppointment' is right. Another example, 'join SH_Patient' is wrong. 'join DS.SH_Patient' is correct. \n"
             #"7. All tables in the generated SQL should have alias. And any column used in the SQL should be in the format of <table alias>.<column>. For example, DS.SH_Patient.PatientNumber is wrong because DS.SH_Patient is not table alias. \n"
-            #"8. Only use column specified in the field COLUMN_NAME. \n"            
+            #"8. Only use column specified in the field COLUMN_NAME. \n"
         )
 
         message_log = [self.system_message(initial_prompt)]
@@ -1147,7 +1148,7 @@ class VannaBase(ABC):
 
                 except Exception as e:
                     raise e
-        
+
         self.run_sql_is_set = True
         self.run_sql = run_sql_clickhouse
 
@@ -1650,11 +1651,11 @@ class VannaBase(ABC):
         raise Exception(
             "You need to connect to a database first by running vn.connect_to_snowflake(), vn.connect_to_postgres(), similar function, or manually set vn.run_sql"
         )
-    
+
     def add_chat_to_memory(self, input: str, response: str):
         self.global_chat_state["messages"].append(self.user_message(input))
         self.global_chat_state["messages"].append(self.assistant_message(response))
-        
+
 
     def ask(
         self,
@@ -1663,7 +1664,7 @@ class VannaBase(ABC):
         auto_train: bool = True,
         visualize: bool = True,  # if False, will not generate plotly code
         allow_llm_to_see_data: bool = False,
-        is_new_topic = None,        
+        is_new_topic = None,
     ) -> Union[
         Tuple[
             Union[str, None],
@@ -1692,17 +1693,17 @@ class VannaBase(ABC):
 
         if question is None:
             question = input("Enter a question: ")
-        
-        if is_new_topic: 
-            self.init_global_chat_state()        
+
+        if is_new_topic:
+            self.init_global_chat_state()
 
         try:
             sql = self.generate_sql(question=question, allow_llm_to_see_data=allow_llm_to_see_data)
         except Exception as e:
             print(e)
             return None, None, None
-        
-        self.add_chat_to_memory(question, sql)        
+
+        self.add_chat_to_memory(question, sql)
 
         if print_results:
             try:
