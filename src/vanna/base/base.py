@@ -752,7 +752,7 @@ class VannaBase(ABC):
         if question is not None:
             system_msg = f"The following is a pandas DataFrame that contains the results of the query that answers the question the user asked: '{question}'"
         else:
-            system_msg = "The following is a pandas DataFrame "
+            system_msg = ""
 
         if sql is not None:
             system_msg += f"\n\nThe DataFrame was produced using this query: {sql}\n\n"
@@ -1633,7 +1633,8 @@ class VannaBase(ABC):
       self.run_sql_is_set = True
       self.run_sql = run_sql_hive
 
-    def run_sql(self, sql: str, **kwargs) -> pd.DataFrame:
+    # def run_sql(self, sql: str, **kwargs) -> pd.DataFrame:
+    def run_sql(self, sql: str, *args) -> pd.DataFrame:
         """
         Example:
         ```python
@@ -2078,6 +2079,8 @@ class VannaBase(ABC):
 
             fig = ldict.get("fig", None)
         except Exception as e:
+            print(f"Unable to generate a suitable chart. Exception {e}")
+            fig = None
             # Inspect data types
             numeric_cols = df.select_dtypes(include=["number"]).columns.tolist()
             categorical_cols = df.select_dtypes(
