@@ -2081,6 +2081,8 @@ class VannaBase(ABC):
         except Exception as e:
             print(f"Unable to generate a suitable chart. Exception {e}")
             fig = None
+            if df is None:
+                return None
             # Inspect data types
             numeric_cols = df.select_dtypes(include=["number"]).columns.tolist()
             categorical_cols = df.select_dtypes(
