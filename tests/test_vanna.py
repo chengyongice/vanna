@@ -1,6 +1,7 @@
 import os
 
 from vanna.anthropic.anthropic_chat import Anthropic_Chat
+from vanna.cohere.cohere_chat import Cohere_Chat
 from vanna.google import GoogleGeminiChat
 from vanna.mistral.mistral import Mistral
 from vanna.openai.openai_chat import OpenAI_Chat
@@ -24,6 +25,7 @@ ANTHROPIC_API_KEY = os.environ['ANTHROPIC_API_KEY']
 SNOWFLAKE_ACCOUNT = os.environ['SNOWFLAKE_ACCOUNT']
 SNOWFLAKE_USERNAME = os.environ['SNOWFLAKE_USERNAME']
 SNOWFLAKE_PASSWORD = os.environ['SNOWFLAKE_PASSWORD']
+# AZURE_SEARCH_API_KEY = os.environ['AZURE_SEARCH_API_KEY']
 
 class VannaOpenAI(VannaDB_VectorStore, OpenAI_Chat):
     def __init__(self, config=None):
@@ -111,6 +113,59 @@ def test_vn_chroma():
     df = vn_chroma.run_sql(sql)
     assert len(df) == 7
 
+# from vanna.azuresearch.azuresearch_vector import AzureAISearch_VectorStore
+
+
+# class VannaAzureSearch(AzureAISearch_VectorStore, OpenAI_Chat):
+#     def __init__(self, config=None):
+#         AzureAISearch_VectorStore.__init__(self, config=config)
+#         OpenAI_Chat.__init__(self, config=config)
+
+# vn_azure_search = VannaAzureSearch(config={'azure_search_api_key': AZURE_SEARCH_API_KEY,'api_key': OPENAI_API_KEY, 'model': 'gpt-3.5-turbo'})
+# vn_azure_search.connect_to_sqlite('https://vanna.ai/Chinook.sqlite')
+
+# def test_vn_azure_search():
+#     existing_training_data = vn_azure_search.get_training_data()
+#     print(existing_training_data)
+#     if len(existing_training_data) > 0:
+#         for _, training_data in existing_training_data.iterrows():
+#             vn_azure_search.remove_training_data(training_data['id'])
+
+#     df_ddl = vn_azure_search.run_sql("SELECT type, sql FROM sqlite_master WHERE sql is not null")
+#     for ddl in df_ddl['sql'].to_list():
+#         vn_azure_search.train(ddl=ddl)
+
+#     sql = vn_azure_search.generate_sql("What are the top 7 customers by sales?")
+#     df = vn_azure_search.run_sql(sql)
+#     assert len(df) == 7
+
+from vanna.milvus import Milvus_VectorStore
+
+
+class VannaMilvus(Milvus_VectorStore, OpenAI_Chat):
+    def __init__(self, config=None):
+        Milvus_VectorStore.__init__(self, config=config)
+        OpenAI_Chat.__init__(self, config=config)
+
+vn_milvus = VannaMilvus(config={'api_key': OPENAI_API_KEY, 'model': 'gpt-3.5-turbo'})
+vn_milvus.connect_to_sqlite('https://vanna.ai/Chinook.sqlite')
+
+def test_vn_milvus():
+    existing_training_data = vn_milvus.get_training_data()
+    if len(existing_training_data) > 0:
+        for _, training_data in existing_training_data.iterrows():
+            vn_milvus.remove_training_data(training_data['id'])
+
+    df_ddl = vn_milvus.run_sql("SELECT type, sql FROM sqlite_master WHERE sql is not null")
+
+    for ddl in df_ddl['sql'].to_list():
+        vn_milvus.train(ddl=ddl)
+
+    sql = vn_milvus.generate_sql("What are the top 7 customers by sales?")
+    df = vn_milvus.run_sql(sql)
+    assert len(df) == 7
+
+
 class VannaNumResults(ChromaDB_VectorStore, OpenAI_Chat):
     def __init__(self, config=None):
         ChromaDB_VectorStore.__init__(self, config=config)
@@ -172,6 +227,23 @@ def test_vn_gemini():
     sql = vn_gemini.generate_sql("What are the top 9 customers by sales?")
     df = vn_gemini.run_sql(sql)
     assert len(df) == 9
+
+class VannaCohere(VannaDB_VectorStore, Cohere_Chat):
+    def __init__(self, config=None):
+        VannaDB_VectorStore.__init__(self, vanna_model=MY_VANNA_MODEL, vanna_api_key=MY_VANNA_API_KEY, config=config)
+        Cohere_Chat.__init__(self, config=config)
+
+try:
+    COHERE_API_KEY = os.environ['COHERE_API_KEY']
+    vn_cohere = VannaCohere(config={'api_key': COHERE_API_KEY, 'model': 'command-a-03-2025'})
+    vn_cohere.connect_to_sqlite('https://vanna.ai/Chinook.sqlite')
+    
+    def test_vn_cohere():
+        sql = vn_cohere.generate_sql("What are the top 10 customers by sales?")
+        df = vn_cohere.run_sql(sql)
+        assert len(df) == 10
+except KeyError:
+    print("Skipping Cohere tests - COHERE_API_KEY not found in environment variables")
 
 def test_training_plan():
     vn_dummy = VannaDefault(model=MY_VANNA_MODEL, api_key=MY_VANNA_API_KEY)
