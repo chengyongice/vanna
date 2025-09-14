@@ -225,6 +225,31 @@ class VannaBase(ABC):
         - Markdown code blocks
         """
 
+        if "dax" in self.dialect.lower():
+            # extract dax rather than SQL
+            # Match ```dax ... ``` blocks
+            sqls = re.findall(r"```dax\s*\n(.*?)```", llm_response, re.DOTALL | re.IGNORECASE)
+            if sqls:
+                sql = sqls[-1].strip()
+                self.log(title="Extracted SQL", message=f"{sql}")
+                return sql
+            
+            # Match any ``` ... ``` code blocks
+            sqls = re.findall(r"```(.*?)```", llm_response, re.DOTALL | re.IGNORECASE)
+            if sqls:
+                sql = sqls[-1].strip()
+                self.log(title="Extracted SQL", message=f"{sql}")
+                return sql
+            
+            # Match EVALUATE ... ;
+            sqls = re.findall(r"\bEVALUATE\b .*?;", llm_response, re.DOTALL | re.IGNORECASE)
+            if sqls:
+                sql = sqls[-1]
+                self.log(title="Extracted SQL", message=f"{sql}")
+                return sql
+
+            return llm_response
+
         # Match CREATE TABLE ... AS SELECT
         sqls = re.findall(r"\bCREATE\s+TABLE\b.*?\bAS\b.*?;", llm_response, re.DOTALL | re.IGNORECASE)
         if sqls:
@@ -642,7 +667,7 @@ class VannaBase(ABC):
         Returns:
             any: The prompt for the LLM to generate SQL.
         """
-
+        
         if initial_prompt is None:
             initial_prompt = f"You are a {self.dialect} expert. " + \
             "Please help to generate a SQL query to answer the question. Your response should ONLY be based on the given context and follow the response guidelines and format instructions. "
@@ -669,26 +694,27 @@ class VannaBase(ABC):
                 initial_prompt, question_sql_list, max_tokens=self.max_tokens
             )
 
-        initial_prompt += (
-            "===Response Guidelines \n"
-            "1. If the provided context is sufficient, please generate a valid SQL query without any explanations for the question.\n"
-            "2. If the provided context is almost sufficient but requires knowledge of a specific string in a particular column, please generate an intermediate SQL query to find the distinct strings in that column. Prepend the query with a comment saying intermediate_sql.\n"
-            "3. If the provided context is insufficient, please explain why it can't be generated.\n"
-            "4. Please use the most relevant table(s).\n"
-            "5. Only use column specified in the field COLUMN_NAME.\n"
-            "6. All tables in the generated SQL should be prefixed with the corresponding schema. All tables referenced in the SQL should be in the format of <schema>.<tablename>. For example, 'from FactAppointment' is wrong. 'from DWH.FactAppointment' is right. Another example, 'join SH_Patient' is wrong. 'join DS.SH_Patient' is correct.\n"
-            "7. All tables in the generated SQL should have alias. And any column used in the SQL should be in the format of <table alias>.<column>. For example, DS.SH_Patient.PatientNumber is wrong because DS.SH_Patient is not table alias.\n"
-            "8. Place any `IS NULL` checks for non-existing condition inside the WHERE clause.\n"
-            "9. Any comparison (such as `>`, `<`, `=`) involving columns from the table on the right-hand side of a `LEFT JOIN` must be placed inside the `ON` clause.\n"
-            "10. Ensure that columns involved in comparisons have the same data type. For example, comparing an integer column against a date column is incorrect.\n"
-            "11. Use AND instead of OR wherever possible, preferring AND over OR.\n"
-            "12. Please generate the final answer in 3 steps. Step 1: generate a SQL query. Step 2: check whether all tables in generated query have been prefixed with schema. If not, please prefix the table with schema. Step 3: check whether all columns in the query from step 2 have been prefixed with table alias. If not, please prefix the column with the table alias.\n"
-            "13. Please use `Dateadd` to calculate new date relative to a given date. Don't use `+`, `-` directly on date which is wrong.\n"
-            #"5. If the question has been asked and answered before, please repeat the answer exactly as it was given before. \n"
-            #"6. All tables in the generated SQL should be prefixed with the corresponding schema. All tables referenced in the SQL should be in the format of <schema>.<tablename>. For example, 'from FactAppointment' is wrong. 'from DWH.FactAppointment' is right. Another example, 'join SH_Patient' is wrong. 'join DS.SH_Patient' is correct. \n"
-            #"7. All tables in the generated SQL should have alias. And any column used in the SQL should be in the format of <table alias>.<column>. For example, DS.SH_Patient.PatientNumber is wrong because DS.SH_Patient is not table alias. \n"
-            #"8. Only use column specified in the field COLUMN_NAME. \n"
-        )
+        if "sql" in self.dialect.lower():
+            initial_prompt += (
+                "===Response Guidelines \n"
+                "1. If the provided context is sufficient, please generate a valid SQL query without any explanations for the question.\n"
+                "2. If the provided context is almost sufficient but requires knowledge of a specific string in a particular column, please generate an intermediate SQL query to find the distinct strings in that column. Prepend the query with a comment saying intermediate_sql.\n"
+                "3. If the provided context is insufficient, please explain why it can't be generated.\n"
+                "4. Please use the most relevant table(s).\n"
+                "5. Only use column specified in the field COLUMN_NAME.\n"
+                "6. All tables in the generated SQL should be prefixed with the corresponding schema. All tables referenced in the SQL should be in the format of <schema>.<tablename>. For example, 'from FactAppointment' is wrong. 'from DWH.FactAppointment' is right. Another example, 'join SH_Patient' is wrong. 'join DS.SH_Patient' is correct.\n"
+                "7. All tables in the generated SQL should have alias. And any column used in the SQL should be in the format of <table alias>.<column>. For example, DS.SH_Patient.PatientNumber is wrong because DS.SH_Patient is not table alias.\n"
+                "8. Place any `IS NULL` checks for non-existing condition inside the WHERE clause.\n"
+                "9. Any comparison (such as `>`, `<`, `=`) involving columns from the table on the right-hand side of a `LEFT JOIN` must be placed inside the `ON` clause.\n"
+                "10. Ensure that columns involved in comparisons have the same data type. For example, comparing an integer column against a date column is incorrect.\n"
+                "11. Use AND instead of OR wherever possible, preferring AND over OR.\n"
+                "12. Please generate the final answer in 3 steps. Step 1: generate a SQL query. Step 2: check whether all tables in generated query have been prefixed with schema. If not, please prefix the table with schema. Step 3: check whether all columns in the query from step 2 have been prefixed with table alias. If not, please prefix the column with the table alias.\n"
+                "13. Please use `Dateadd` to calculate new date relative to a given date. Don't use `+`, `-` directly on date which is wrong.\n"
+                #"5. If the question has been asked and answered before, please repeat the answer exactly as it was given before. \n"
+                #"6. All tables in the generated SQL should be prefixed with the corresponding schema. All tables referenced in the SQL should be in the format of <schema>.<tablename>. For example, 'from FactAppointment' is wrong. 'from DWH.FactAppointment' is right. Another example, 'join SH_Patient' is wrong. 'join DS.SH_Patient' is correct. \n"
+                #"7. All tables in the generated SQL should have alias. And any column used in the SQL should be in the format of <table alias>.<column>. For example, DS.SH_Patient.PatientNumber is wrong because DS.SH_Patient is not table alias. \n"
+                #"8. Only use column specified in the field COLUMN_NAME. \n"
+            )
 
         message_log = [self.system_message(initial_prompt)]
 
